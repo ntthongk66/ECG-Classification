@@ -124,8 +124,10 @@ class MNISTDataModule(LightningDataModule):
 
         # load and split datasets only if not loaded already
         if not self.data_train and not self.data_val and not self.data_test:
-            trainset = MNIST(self.hparams.data_dir, train=True, transform=self.transforms)
-            testset = MNIST(self.hparams.data_dir, train=False, transform=self.transforms)
+            trainset = MNIST(self.hparams.data_dir, train=True, transform=self.transforms) #60000 samples 
+            testset = MNIST(self.hparams.data_dir, train=False, transform=self.transforms) #10000 samples
+            # each sample Tuple(torch.Size(1, 28, 28), class)
+            print(trainset[0][0].shape)
             dataset = ConcatDataset(datasets=[trainset, testset])
             self.data_train, self.data_val, self.data_test = random_split(
                 dataset=dataset,
@@ -198,4 +200,7 @@ class MNISTDataModule(LightningDataModule):
 
 
 if __name__ == "__main__":
-    _ = MNISTDataModule()
+    MNIST_dl = MNISTDataModule()
+    # MNIST_dl.prepare_data()
+    MNIST_dl.setup()
+    
