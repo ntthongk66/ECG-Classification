@@ -2,7 +2,9 @@ from typing import Any, Dict, Optional, Tuple
 
 import torch
 from lightning import LightningDataModule
-from torch.utils.data import ConcatDataset, DataLoader, Dataset, random_split
+from torch.utils.data import ConcatDataset, DataLoader, Dataset, random_split, TensorDataset
+from sklearn.preprocessing import StandardScaler, LabelEncoder, MultiLabelBinarizer
+from sklearn.utils import shuffle
 import os
 from pathlib import Path
 import pandas as pd
@@ -19,6 +21,7 @@ class PTBXLDataModule(LightningDataModule):
         batch_size: int = 32,
         num_workers: int = 0,
         pin_memory: bool = False,
+        sub_disease: bool = False,
     ) -> None:
         """_summary_
 
@@ -44,6 +47,10 @@ class PTBXLDataModule(LightningDataModule):
 
         self.bath_size_per_device = batch_size
 
+        self.scaler = StandardScaler()
+        self.le = LabelEncoder()
+        self.sub_disease = sub_disease
+
     @property
     def num_classes(self) -> int:
         """Get the number of classes
@@ -58,46 +65,103 @@ class PTBXLDataModule(LightningDataModule):
         return super().prepare_data()
 
     def setup(self):
-        # get the absolute path to the ptb-xl data
-        path = os.path.join(os.getcwd(), Path(self.data_dir))
-        Y = pd.read_csv(os.path.join(path, "ptbxl_database.csv"),
-                        index_col="ecg_id")  # Y.shape = (21799, 27)
+        if self.sub_disease:
+            self.X_train, self.y_train, self.X_test, self.y_test = self.preprocess_sub_disease()
+        else:
+            self.X_train, self.y_train, self.X_test, self.y_test, self.X_val, self.y_val = self.preprocess()
 
+        # Standardizing the data
+        self.scaler.fit(np.vstack(self.X_train).flatten()
+                        [:, np.newaxis].astype(float))
+        self.X_train = self.apply_scaler(self.X_train)
+        self.X_test = self.apply_scaler(self.X_test)
+        if not self.sub_disease:
+            self.X_val = self.apply_scaler(self.X_val)
+
+        # Convert to PyTorch tensors
+        self.X_train = torch.tensor(self.X_train, dtype=torch.float32)
+        self.y_train = torch.tensor(self.y_train, dtype=torch.float32)
+        self.X_test = torch.tensor(self.X_test, dtype=torch.float32)
+        self.y_test = torch.tensor(self.y_test, dtype=torch.float32)
+
+        if not self.sub_disease:
+            self.X_val = torch.tensor(self.X_val, dtype=torch.float32)
+            self.y_val = torch.tensor(self.y_val, dtype=torch.float32)
+
+    def preprocess(self):
+        """ Preprocesses the dataset with superclass """
+        # print("Loading dataset...", end="\n" * 2)
+        path = os.path.join(self.data_dir)
+        Y = pd.read_csv(os.path.join(
+            path, "ptbxl_database.csv"), index_col="ecg_id")
         data = np.array([wfdb.rdsamp(os.path.join(path, f))[0]
-                        for f in Y.filename_lr])  # data.shape = (21799, 1000, 12)
-
-        # todo: scp_codes is a column in "ptbxl_database.csv", need to findout what it is
+                        for f in Y.filename_lr])
         Y.scp_codes = Y.scp_codes.apply(lambda x: ast.literal_eval(x))
-
-        # print(Y.scp_codes)
-        # ecg_id
-        # 1                 {'NORM': 100.0, 'LVOLT': 0.0, 'SR': 0.0}
-        # 2                             {'NORM': 80.0, 'SBRAD': 0.0}
-        # 3                               {'NORM': 100.0, 'SR': 0.0}
-        # 4                               {'NORM': 100.0, 'SR': 0.0}
-        # 5                               {'NORM': 100.0, 'SR': 0.0}
-        #                             ...
-        # 21833    {'NDT': 100.0, 'PVC': 100.0, 'VCLVH': 0.0, 'ST...
-        # 21834             {'NORM': 100.0, 'ABQRS': 0.0, 'SR': 0.0}
-        # 21835                           {'ISCAS': 50.0, 'SR': 0.0}
-        # 21836                           {'NORM': 100.0, 'SR': 0.0}
-        # 21837                           {'NORM': 100.0, 'SR': 0.0}
-        # Name: scp_codes, Length: 21799, dtype: object
 
         agg_df = pd.read_csv(os.path.join(
             path, "scp_statements.csv"), index_col=0)
         agg_df = agg_df[agg_df.diagnostic == 1]
-        # print(agg_df.shape) (44, 12)
+
+        def agg(y_dic):
+            temp = []
+            for key in y_dic.keys():
+                if key in agg_df.index:
+                    c = agg_df.loc[key].diagnostic_class
+                    if pd.notnull(c):
+                        temp.append(c)
+            return list(set(temp))
+
+        Y["diagnostic_superclass"] = Y.scp_code.apply(agg)
+        Y["superdiagnostic_len"] = Y["diagnostic_superclass"].apply(
+            lambda x: len(x))
+        counts = pd.Series(np.concatenate(
+            Y.diagnostic_superclass.values)).value_counts()
+        Y["diagnostic_superclass"] = Y["diagnostic_superclass"].apply(
+            lambda x: list(set(x).intersection(set(counts.index.values)))
+        )
+        X_data = data[Y["superdiagnostic_len"] >= 1]
+        Y_data = Y[Y["superdiagnostic_len"] >= 1]
+        # print("Preprocessing dataset...", end="\n" * 2)
+        mlb = MultiLabelBinarizer()
+        mlb.fit(Y_data["diagnostic_superclass"])
+        y = mlb.transform(Y_data["diagnostic_superclass"].values)
+
+        # Stratified split
+        X_train = X_data[Y_data.strat_fold < 9]
+        y_train = y[Y_data.strat_fold < 9]
+
+        X_val = X_data[Y_data.strat_fold == 9]
+        y_val = y[Y_data.strat_fold == 9]
+
+        X_test = X_data[Y_data.strat_fold == 10]
+        y_test = y[Y_data.strat_fold == 10]
+
+        return X_train, y_train, X_test, y_test, X_val, y_val
+
+    def preprocess_sub_disease(self):
+        """Preprocess the sub-diagnostic diseases of MI."""
+        # print("Loading dataset...", end="\n" * 2)
+        path = os.path.join(self.data_dir)
+        Y = pd.read_csv(os.path.join(
+            path, "ptbxl_database.csv"), index_col="ecg_id")
+        data = np.array([wfdb.rdsamp(os.path.join(path, f))[0]
+                        for f in Y.filename_lr])
+        Y.scp_codes = Y.scp_codes.apply(lambda x: ast.literal_eval(x))
+
+        agg_df = pd.read_csv(os.path.join(
+            path, "scp_statements.csv"), index_col=0)
+        agg_df = agg_df[agg_df.diagnostic == 1]
 
         def MI_agg(y_dic):
             temp = []
             for key in y_dic.keys():
                 if y_dic[key] in [100, 80, 0]:
-                    if key in ["ASMI", "IMI"]:
-                        temp.append(key)
+                    if key in agg_df.index:
+                        if key in ["ASMI", "IMI"]:
+                            temp.append(key)
             return list(set(temp))
 
-        Y["diagnostic_subclass"] = Y.scp_codes.apply(MI_agg)
+        Y["diagnostic_subclass"] = Y.scp_code.apply(MI_agg)
         Y["subdiagnostic_len"] = Y["diagnostic_subclass"].apply(
             lambda x: len(x))
 
@@ -105,27 +169,11 @@ class PTBXLDataModule(LightningDataModule):
         x1 = data[Y["subdiagnostic_len"] == 1]
         y1 = Y[Y["subdiagnostic_len"] == 1]
 
-        # print(y1)
-        #         patient_id   age  sex  ...                filename_hr  diagnostic_subclass  subdiagnostic_len
-        # ecg_id                         ...
-        # 177        21551.0  73.0    0  ...  records500/00000/00177_hr               [ASMI]                  1
-        # 181        21551.0  73.0    0  ...  records500/00000/00181_hr               [ASMI]                  1
-        # 184        13112.0  74.0    0  ...  records500/00000/00184_hr               [ASMI]                  1
-        # 189        13112.0  74.0    0  ...  records500/00000/00189_hr               [ASMI]                  1
-        # 210        16062.0  58.0    0  ...  records500/00000/00210_hr                [IMI]                  1
-        # ...            ...   ...  ...  ...                        ...                  ...                ...
-        # 21805      16291.0  72.0    0  ...  records500/21000/21805_hr               [ASMI]                  1
-        # 21815      14433.0  82.0    1  ...  records500/21000/21815_hr                [IMI]                  1
-        # 21826       9178.0  82.0    1  ...  records500/21000/21826_hr                [IMI]                  1
-        # 21827      13862.0  79.0    1  ...  records500/21000/21827_hr                [IMI]                  1
-        # 21828      13862.0  79.0    1  ...  records500/21000/21828_hr                [IMI]                  1
-
         def norm_agg(y_dic):
             for key in y_dic.keys():
                 if y_dic[key] in [100]:
                     if key == "NORM":
                         return "NORM"
-
         N = Y.copy()
         N["diagnostic_subclass"] = Y.scp_codes.apply(norm_agg)
 
@@ -133,11 +181,7 @@ class PTBXLDataModule(LightningDataModule):
         x2 = data[N["diagnostic_subclass"] == "NORM"]
         y2 = N[N["diagnostic_subclass"] == "NORM"]
 
-        # todo: Need to findout detailed about ptb_xl dataset (VERY DETAIL about each column in the csv file)
-
         # Train and test splits
-        # * Arcording to this paper https://www.ncbi.nlm.nih.gov/pmc/articles/PMC7248071/pdf/41597_2020_Article_495.pdf, "strat_fold" column just for split the train and test set
-        # todo: why they set to split like that
         x1_train = x1[y1.strat_fold <= 8]
         y1_train = y1[y1.strat_fold <= 8]
 
@@ -150,7 +194,6 @@ class PTBXLDataModule(LightningDataModule):
         x2_test = x2[y2.strat_fold == 3][:200]
         y2_test = y2[y2.strat_fold == 3][:200]
 
-        # todo: get the shape, datatype all of these
         X_train = np.concatenate((x1_train, x2_train), axis=0)
         X_test = np.concatenate((x1_test, x2_test), axis=0)
 
@@ -167,9 +210,45 @@ class PTBXLDataModule(LightningDataModule):
             (y1_test.diagnostic_subclass.values,
              y2_test.diagnostic_subclass.values), axis=0
         )
-    
-        # print(X_train[0].shape) # (1000, 12)
-        # print(y1_train.shape) # (1828, 29)
+
+        # Encode labels
+        le = LabelEncoder()
+        y_train = to_categorical(le.fit_transform(y_train), 2)
+        y_test = to_categorical(le.transform(y_test), 2)
+
+        return X_train, y_train, X_test, y_test
+
+    def apply_scaler(self, inputs):
+        """Applies standardization to the ECG signals using the fitted scaler."""
+        temp = []
+        for x in inputs:
+            x_shape = x.shape
+            temp.append(self.scaler.transform(
+                x.flatten()[:, np.newaxis]).reshape(x_shape)
+            )
+        return np.array(temp)
+
+    def to_categorical(self, y, num_classes):
+        """ 1-hot encodes a tensor """
+        return np.eye(num_classes, dtype='nint8')[y]
+
+    def train_dataloader(self):
+        train_dataset = TensorDataset(self.X_train, self.y_train)
+        return DataLoader(train_dataset, batch_size=self.bath_size_per_device, shuffle=True)
+
+    def val_dataloader(self):
+        if self.sub_disease:
+            return None
+        val_dataset = TensorDataset(self.X_val, self.y_val)
+        return DataLoader(val_dataset, batch_size=self.bath_size_per_device)
+
+    def test_dataloader(self):
+        test_dataset = TensorDataset(self.X_test, self.y_test)
+        return DataLoader(test_dataset, batch_size=self.batch_size)
+
+    def predict_dataloader(self):
+        return self.test_dataloader()
+
 
 if __name__ == '__main__':
     DL = PTBXLDataModule()
