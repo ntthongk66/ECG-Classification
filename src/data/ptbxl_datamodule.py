@@ -11,6 +11,7 @@ import pandas as pd
 import numpy as np
 import wfdb
 import ast
+import matplotlib.pyplot as plt
 
 
 class PTBXLDataModule(LightningDataModule):
@@ -21,7 +22,7 @@ class PTBXLDataModule(LightningDataModule):
         batch_size: int = 32,
         num_workers: int = 0,
         pin_memory: bool = False,
-        sub_disease: bool = False,
+        sub_disease: bool = True,
     ) -> None:
         """_summary_
 
@@ -39,12 +40,14 @@ class PTBXLDataModule(LightningDataModule):
         # also ensures init params will be stored in ckpt
         self.save_hyperparameters(logger=False)
 
+        self.X_train: Optional[Dataset] = None
+        self.y_train: Optional[Dataset] = None
+        self.X_test: Optional[Dataset] = None
+        self.y_test: Optional[Dataset] = None
+        self.X_val: Optional[Dataset] = None
+        self.y_val: Optional[Dataset] = None
+
         self.data_dir = data_dir
-
-        self.data_train: Optional[Dataset] = None
-        self.data_val: Optional[Dataset] = None
-        self.data_test: Optional[Dataset] = None
-
         self.bath_size_per_device = batch_size
 
         self.scaler = StandardScaler()
@@ -88,6 +91,15 @@ class PTBXLDataModule(LightningDataModule):
             self.X_val = torch.tensor(self.X_val, dtype=torch.float32)
             self.y_val = torch.tensor(self.y_val, dtype=torch.float32)
 
+        # Reshape to match the TensorFlow shape (32, 12, 1000, 1)
+        self.X_train = self.X_train.permute(
+            0, 2, 1).unsqueeze(-1)      # (batch_size, channels, time_steps, 1)
+        self.X_test = self.X_test.permute(
+            0, 2, 1).unsqueeze(-1)      # Same for test data
+        if not self.sub_disease:
+            self.X_val = self.X_val.permute(
+                0, 2, 1).unsqueeze(-1)  # Same for validation data
+
     def preprocess(self):
         """ Preprocesses the dataset with superclass """
         # print("Loading dataset...", end="\n" * 2)
@@ -111,7 +123,7 @@ class PTBXLDataModule(LightningDataModule):
                         temp.append(c)
             return list(set(temp))
 
-        Y["diagnostic_superclass"] = Y.scp_code.apply(agg)
+        Y["diagnostic_superclass"] = Y.scp_codes.apply(agg)
         Y["superdiagnostic_len"] = Y["diagnostic_superclass"].apply(
             lambda x: len(x))
         counts = pd.Series(np.concatenate(
@@ -161,7 +173,7 @@ class PTBXLDataModule(LightningDataModule):
                             temp.append(key)
             return list(set(temp))
 
-        Y["diagnostic_subclass"] = Y.scp_code.apply(MI_agg)
+        Y["diagnostic_subclass"] = Y.scp_codes.apply(MI_agg)
         Y["subdiagnostic_len"] = Y["diagnostic_subclass"].apply(
             lambda x: len(x))
 
@@ -213,8 +225,8 @@ class PTBXLDataModule(LightningDataModule):
 
         # Encode labels
         le = LabelEncoder()
-        y_train = to_categorical(le.fit_transform(y_train), 2)
-        y_test = to_categorical(le.transform(y_test), 2)
+        y_train = self.to_categorical(le.fit_transform(y_train), 3)
+        y_test = self.to_categorical(le.transform(y_test), 3)
 
         return X_train, y_train, X_test, y_test
 
@@ -230,21 +242,26 @@ class PTBXLDataModule(LightningDataModule):
 
     def to_categorical(self, y, num_classes):
         """ 1-hot encodes a tensor """
-        return np.eye(num_classes, dtype='nint8')[y]
+        return np.eye(num_classes, dtype=np.int8)[y]
 
     def train_dataloader(self):
         train_dataset = TensorDataset(self.X_train, self.y_train)
+        # dataloader = DataLoader(
+        #     train_dataset, batch_size=self.bath_size_per_device, shuffle=True)
+        # for x, y in dataloader:
+        #     print(f'Input shape: {x.shape}, Labels shape: {y.shape}')
+        #     break
         return DataLoader(train_dataset, batch_size=self.bath_size_per_device, shuffle=True)
 
     def val_dataloader(self):
         if self.sub_disease:
             return None
         val_dataset = TensorDataset(self.X_val, self.y_val)
-        return DataLoader(val_dataset, batch_size=self.bath_size_per_device)
+        return DataLoader(val_dataset, batch_size=self.bath_size_per_device, shuffle=True)
 
     def test_dataloader(self):
         test_dataset = TensorDataset(self.X_test, self.y_test)
-        return DataLoader(test_dataset, batch_size=self.batch_size)
+        return DataLoader(test_dataset, batch_size=self.bath_size_per_device, shuffle=True)
 
     def predict_dataloader(self):
         return self.test_dataloader()
@@ -253,3 +270,23 @@ class PTBXLDataModule(LightningDataModule):
 if __name__ == '__main__':
     DL = PTBXLDataModule()
     DL.setup()
+    DL.train_dataloader()
+    # dataloader = DL.train_dataloader()
+    # for batch_idx, (inputs, labels) in enumerate(dataloader):
+    #     print(f"Input shape: {inputs.shape}, Label shape: {labels.shape}")
+
+    #     # Visualize the first 5 signals in the batch
+    #     num_signals_to_visualize = 5
+    #     plt.figure(figsize=(15, num_signals_to_visualize * 3))
+
+    #     for i in range(num_signals_to_visualize):
+    #         plt.subplot(num_signals_to_visualize, 1, i + 1)
+    #         # .squeeze() removes unnecessary dimensions
+    #         plt.plot(inputs[i].numpy().squeeze())
+    #         plt.title(f"ECG Signal {i + 1} - Label: {labels[i].numpy()}")
+    #         plt.xlabel("Time")
+    #         plt.ylabel("Amplitude")
+    #     plt.tight_layout()
+    #     plt.show()
+
+    #     break  # Only process the first batch for visualization
