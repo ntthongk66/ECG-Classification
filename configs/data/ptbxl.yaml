@@ -1,0 +1,6 @@
+_target_: src.data.ptbxl_datamodule.PTBXLDataModule
+data_dir: ${paths.data_dir}/ptb-xl
+batch_size: 64 # Needs to be divisible by the number of devices (e.g., if in a distributed setup)
+num_workers: 0
+pin_memory: False
+sub_disease: False

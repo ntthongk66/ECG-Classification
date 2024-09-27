@@ -18,7 +18,7 @@ class PTBXLDataModule(LightningDataModule):
     def __init__(
         self,
         data_dir: str = "data/ptb-xl/",
-        train_val_test_split: Tuple[int, int, int] = (),
+        # train_val_test_split: Tuple[int, int, int] = (),
         batch_size: int = 32,
         num_workers: int = 0,
         pin_memory: bool = False,
@@ -67,7 +67,7 @@ class PTBXLDataModule(LightningDataModule):
 
         return super().prepare_data()
 
-    def setup(self):
+    def setup(self, stage: Optional[str] = None):
         if self.sub_disease:
             self.X_train, self.y_train, self.X_test, self.y_test = self.preprocess_sub_disease()
         else:
@@ -270,7 +270,9 @@ class PTBXLDataModule(LightningDataModule):
 if __name__ == '__main__':
     DL = PTBXLDataModule()
     DL.setup()
-    DL.train_dataloader()
+    loader = DL.train_dataloader()
+    x, y = next(iter(loader))
+    print(y.shape)
     # dataloader = DL.train_dataloader()
     # for batch_idx, (inputs, labels) in enumerate(dataloader):
     #     print(f"Input shape: {inputs.shape}, Label shape: {labels.shape}")
