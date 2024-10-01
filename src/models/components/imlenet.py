@@ -158,8 +158,7 @@ class IMLENet(nn.Module):
 
         # Output Layer
         x = self.fc(x)
-        # outputs = torch.sigmoid(x)
-        outputs = x
+        outputs = torch.sigmoid(x)
         return outputs
     
 """Configs for building the IMLE-Net model.
@@ -203,7 +202,17 @@ class Config:
 
 if __name__=='__main__':
     config = Config()
-    model = IMLENet(config)
+    model = IMLENet(
+        input_channels=config.input_channels,
+        signal_len=config.signal_len,
+        beat_len=config.beat_len,
+        start_filters=config.start_filters,
+        kernel_size=config.kernel_size,
+        num_blocks_list=config.num_blocks_list,
+        lstm_units=config.lstm_units,
+        classes=config.classes
+        )
     input = torch.rand(32, 12, 1000, 1)
     output = model(input)
     print(output.shape)
+    print(output)
