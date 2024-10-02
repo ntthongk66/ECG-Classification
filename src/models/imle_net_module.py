@@ -107,12 +107,11 @@ class IMLENetLitModule(LightningModule):
             - A tensor of target labels.
         """
         x, y = batch
-        # print(f"Label shape: {y.shape}")
+        y = torch.argmax(y, dim=1)
         logits = self.forward(x)
-        # print(f"Pred shape: {logits.shape}")
         loss = self.criterion(logits, y)
         preds = torch.argmax(logits, dim=1)
-        y = torch.argmax(y, dim=1)
+
         return loss, preds, y
 
     def training_step(
@@ -130,8 +129,8 @@ class IMLENetLitModule(LightningModule):
         # update and log metrics
         self.train_loss(loss)
         self.train_acc(preds, targets)
-        self.log("train/loss", self.train_loss, on_step=True, on_epoch=False, prog_bar=True)
-        self.log("train/acc", self.train_acc, on_step=True, on_epoch=False, prog_bar=True)
+        self.log("train/loss", self.train_loss, on_step=True, on_epoch=True, prog_bar=True)
+        self.log("train/acc", self.train_acc, on_step=True, on_epoch=True, prog_bar=True)
 
         # return loss or backpropagation will fail
         return loss
@@ -152,8 +151,8 @@ class IMLENetLitModule(LightningModule):
         # update and log metrics
         self.val_loss(loss)
         self.val_acc(preds, targets)
-        self.log("val/loss", self.val_loss, on_step=True, on_epoch=False, prog_bar=True)
-        self.log("val/acc", self.val_acc, on_step=True, on_epoch=False, prog_bar=True)
+        self.log("val/loss", self.val_loss, on_step=True, on_epoch=True, prog_bar=True)
+        self.log("val/acc", self.val_acc, on_step=True, on_epoch=True, prog_bar=True)
 
     def on_validation_epoch_end(self) -> None:
         "Lightning hook that is called when a validation epoch ends."
