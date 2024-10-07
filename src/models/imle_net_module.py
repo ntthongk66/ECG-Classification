@@ -68,7 +68,7 @@ class IMLENetLitModule(LightningModule):
         self.net = net
 
         # loss function
-        self.criterion = torch.nn.CrossEntropyLoss()
+        self.criterion = torch.nn.BCEWithLogitsLoss()
 
         num_classes = self.net.classes
 
@@ -114,11 +114,10 @@ class IMLENetLitModule(LightningModule):
             - A tensor of target labels.
         """
         x, y = batch
-        y = torch.argmax(y, dim=1)
         logits = self.forward(x)
         loss = self.criterion(logits, y)
         preds = torch.argmax(logits, dim=1)
-
+        y = torch.argmax(y, dim=1)
         return loss, preds, y
 
     def training_step(

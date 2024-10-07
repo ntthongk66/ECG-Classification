@@ -113,19 +113,20 @@ class ResidualBlock(nn.Module):
         kernel_size: int = 8,
     ):
         super(ResidualBlock, self).__init__()
-        stride = 2 if downsample else 1
+        self.Downsample = downsample
+        stride = 1 if not downsample else 2
         # Calculate padding to achieve 'same' padding
         padding = self.calculate_padding(kernel_size, stride)
         self.conv1 = nn.Conv1d(
             in_channels, out_channels, kernel_size, stride=stride, padding=padding
         )
-      
+
         self.bn1 = nn.BatchNorm1d(out_channels)
         self.conv2 = nn.Conv1d(
             out_channels, out_channels, kernel_size, stride=1, padding=kernel_size // 2
         )
         
-      
+
         self.bn2 = nn.BatchNorm1d(out_channels)
         self.downsample = nn.Sequential()
         if downsample or in_channels != out_channels:
@@ -142,13 +143,19 @@ class ResidualBlock(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         out = self.conv1(x)
+        # print(f"=== first conv, downsample:{self.Downsample} : {out.shape}")
         out = F.relu(out)
         out = self.bn1(out)
 
         out = self.conv2(out)
+        # print(f"=== second conv, downsample:{self.Downsample} : {out.shape}")
     
         x = self.downsample(x)
+        # if self.Downsample:
+            # print(f"=== IF downsample: {x.shape}")
         out += x
+        
+        # print(f"=== third conv, downsample:{self.Downsample} : {out.shape}")
         out = F.relu(out)
         out = self.bn2(out)
         return out
@@ -237,8 +244,9 @@ class IMLENet(nn.Module):
         x = x.view(-1, 1, self.beat_len)  # (batch_size * input_channels * num_beats, 1, beat_len)
 
         # Beat Level
-        # print(x.shape) # (7680, 50, 1)
+        # print(x.shape) # (7680, 1, 50)
         x = self.beat_conv(x)
+        # print(f"==== beat_conv1d {x.shape}") # (7680, 32, 49)
         x = F.relu(x)
         x = self.residual_blocks(x)
         x = x.transpose(
@@ -261,8 +269,7 @@ class IMLENet(nn.Module):
 
         # Output Layer
         x = self.fc(x)
-        outputs = torch.sigmoid(x)
-        # outputs = x
+        outputs = x
         return outputs
 
 
@@ -323,11 +330,11 @@ if __name__ == "__main__":
     # input = torch.from_numpy(input_np)
     output_torch = model(input)
     
-    print(output_torch.shape)
+    print(output_torch)
     
     pred = torch.argmax(output_torch, dim=1)
     print(pred)
-    
+    print(pred.dtype)
     # # print(output_torch)
     # output_tf = load_numpy(file_name="tf_output")
     # # print(output.shape)

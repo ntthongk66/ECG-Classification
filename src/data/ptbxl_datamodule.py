@@ -273,6 +273,7 @@ if __name__ == '__main__':
     loader = DL.train_dataloader()
     x, y = next(iter(loader))
     print(y.shape)
+    print(y)
     # dataloader = DL.train_dataloader()
     # for batch_idx, (inputs, labels) in enumerate(dataloader):
     #     print(f"Input shape: {inputs.shape}, Label shape: {labels.shape}")
