@@ -5,28 +5,113 @@ import torch.nn.functional as F
 import math
 
 class Attention(nn.Module):
-    """Feed-forward attention layer for PyTorch."""
+    """A class used to build the feed-forward attention layer.
 
-    def __init__(self, input_dim: int, return_sequences: bool = False, dim: int = 64):
+    Attributes
+    ----------
+    return_sequences: bool, optional
+        If False, returns the calculated attention weighted sum of an ECG signal. (default: False)
+    dim: int, optional
+        The dimension of the attention layer. (default: 64)
+
+    Methods
+    -------
+    forward(x)
+        Calculates the attention weights.
+    """
+
+    def __init__(self, return_sequences: bool = False, dim: int = 64) -> None:
         super(Attention, self).__init__()
         self.return_sequences = return_sequences
         self.dim = dim
-        self.W = nn.Linear(input_dim, dim)
-        self.V = nn.Linear(dim, 1)
+
+    def build(self, input_shape: Tuple[int, int, int]) -> None:
+        """Builds the attention layer.
+
+        alpha = softmax(V.T * tanh(W.T * x + b))
+
+        Parameters
+        ----------
+        W: torch.Tensor
+            The weights of the attention layer.
+        b: torch.Tensor
+            The bias of the attention layer.
+        V: torch.Tensor
+            The secondary weights of the attention layer.
+        """
+        self.W = nn.Parameter(torch.Tensor(input_shape[-1], self.dim)).to(torch.device('cuda'))
+        self.b = nn.Parameter(torch.Tensor(input_shape[1], self.dim)).to(torch.device('cuda'))
+        self.V = nn.Parameter(torch.Tensor(self.dim, 1)).to(torch.device('cuda'))
+
+        # Initialize weights
+        nn.init.normal_(self.W)
+        nn.init.zeros_(self.b)
+        nn.init.normal_(self.V)
 
     def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-        e = torch.tanh(self.W(x))
-        e = self.V(e).squeeze(-1)  # (batch_size, time_steps)
-        a = F.softmax(e, dim=1).unsqueeze(-1)  # (batch_size, time_steps, 1)
+        """Calculates the attention weights.
+
+        Parameters
+        ----------
+        x: torch.Tensor
+            The input tensor.
+
+        Returns
+        -------
+        Tuple[torch.Tensor, torch.Tensor]
+            The attention weighted sum of the input tensor and the attention weights.
+        """
+        if not hasattr(self, 'W'):
+            self.build(x.size())
+
+        e = torch.tanh(torch.matmul(x, self.W) + self.b)
+        e = torch.matmul(e, self.V)
+        a = F.softmax(e, dim=1)
         output = x * a
+
         if self.return_sequences:
             return output, a
-        return output.sum(dim=1), a
+
+        return torch.sum(output, dim=1), a
+
+# def relu_bn(inputs: torch.Tensor) -> torch.Tensor:
+#     """ReLU activation followed by Batch Normalization.
+
+#     Parameters
+#     ----------
+#     inputs: torch.Tensor
+#         The input tensor.
+
+#     Returns
+#     -------
+#     torch.Tensor
+#         ReLU and Batch Normalization applied to the input tensor.
+#     """
+#     bn_layer = nn.BatchNorm1d(
+#         num_features=inputs.size(-1),  # Normalize over the last dimension (feature map)
+#         eps=0.001,                     # epsilon
+#         momentum=0.01,                 # 1 - momentum in PyTorch (so momentum=0.99 becomes 1-0.99 = 0.01)
+#         affine=True                    # center=True and scale=True (learnable parameters)
+#     )
+#     # ReLU followed by BatchNorm
+#     relu = nn.ReLU()(inputs)
+#     # bn = nn.BatchNorm1d(inputs.size(1))(relu)  # BatchNorm1d for 3D input (batch_size, channels, length)
+#     bn = bn_layer(relu.view(-1, inputs.size(-1)))
+#     return bn.view(inputs.shape), relu
+
+
+
 
 class ResidualBlock(nn.Module):
     """Residual block with optional downsampling."""
 
-    def __init__(self, in_channels: int, out_channels: int, downsample: bool, kernel_size: int = 8):
+    def __init__(
+        self,
+        in_channels: int,
+        out_channels: int,
+        downsample: bool,
+        kernel_size: int = 8,
+    ):
         super(ResidualBlock, self).__init__()
         stride = 2 if downsample else 1
         # Calculate padding to achieve 'same' padding
@@ -34,10 +119,13 @@ class ResidualBlock(nn.Module):
         self.conv1 = nn.Conv1d(
             in_channels, out_channels, kernel_size, stride=stride, padding=padding
         )
+      
         self.bn1 = nn.BatchNorm1d(out_channels)
         self.conv2 = nn.Conv1d(
             out_channels, out_channels, kernel_size, stride=1, padding=kernel_size // 2
         )
+        
+      
         self.bn2 = nn.BatchNorm1d(out_channels)
         self.downsample = nn.Sequential()
         if downsample or in_channels != out_channels:
@@ -53,13 +141,18 @@ class ResidualBlock(nn.Module):
         return padding
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        identity = x
-        out = F.relu(self.bn1(self.conv1(x)))
-        out = self.bn2(self.conv2(out))
-        identity = self.downsample(identity)
-        out += identity
+        out = self.conv1(x)
         out = F.relu(out)
+        out = self.bn1(out)
+
+        out = self.conv2(out)
+    
+        x = self.downsample(x)
+        out += x
+        out = F.relu(out)
+        out = self.bn2(out)
         return out
+
 
 class IMLENet(nn.Module):
     """IMLE-Net model."""
@@ -74,7 +167,7 @@ class IMLENet(nn.Module):
         num_blocks_list,
         lstm_units,
         classes,
-        sub=False
+        sub=False,
     ):
         super().__init__()
         self.sub = sub
@@ -87,6 +180,7 @@ class IMLENet(nn.Module):
         self.lstm_units = lstm_units
         self.classes = classes
 
+        self.device = torch.device('cuda')
         # Beat Level
         # Calculate padding to achieve 'same' padding
         padding = (self.kernel_size - 1) // 2
@@ -115,7 +209,8 @@ class IMLENet(nn.Module):
         self.residual_blocks = nn.Sequential(*blocks)
 
         # Beat Attention
-        self.beat_attention = Attention(input_dim=num_filters)
+        # self.beat_attention = Attention(input_dim=num_filters)
+        self.beat_attention = Attention()
 
         # Rhythm Level
         self.lstm = nn.LSTM(
@@ -125,11 +220,13 @@ class IMLENet(nn.Module):
             batch_first=True,
             bidirectional=True,
         )
-        self.rhythm_attention = Attention(input_dim=self.lstm_units * 2)
-
+        # self.rhythm_attention = Attention(input_dim=self.lstm_units * 2)
+        self.rhythm_attention = Attention()
+        
         # Channel Level
-        self.channel_attention = Attention(input_dim=self.lstm_units * 2)
-
+        # self.channel_attention = Attention(input_dim=self.lstm_units * 2)
+        self.channel_attention = Attention()
+        
         # Output Layer
         self.fc = nn.Linear(self.lstm_units * 2, self.classes)
 
@@ -140,27 +237,35 @@ class IMLENet(nn.Module):
         x = x.view(-1, 1, self.beat_len)  # (batch_size * input_channels * num_beats, 1, beat_len)
 
         # Beat Level
+        # print(x.shape) # (7680, 50, 1)
         x = self.beat_conv(x)
         x = F.relu(x)
         x = self.residual_blocks(x)
-        x = x.transpose(1, 2)  # (batch_size * input_channels * num_beats, time_steps, features)
+        x = x.transpose(
+            1, 2
+        )  # (batch_size * input_channels * num_beats, time_steps, features)
+        self.beat_attention.build(x.size())
         x, _ = self.beat_attention(x)
 
         # Rhythm Level
         num_beats = self.signal_len // self.beat_len
         x = x.view(batch_size * self.input_channels, num_beats, -1)
         x, _ = self.lstm(x)
+        self.rhythm_attention.build(x.size())
         x, _ = self.rhythm_attention(x)
 
         # Channel Level
         x = x.view(batch_size, self.input_channels, -1)
+        self.channel_attention.build(x.size())
         x, _ = self.channel_attention(x)
 
         # Output Layer
         x = self.fc(x)
         outputs = torch.sigmoid(x)
+        # outputs = x
         return outputs
-    
+
+
 """Configs for building the IMLE-Net model.
 """
 
@@ -200,9 +305,11 @@ class Config:
         self.start_filters = 32
         self.classes = 5
 
-if __name__=='__main__':
+
+if __name__ == "__main__":
     config = Config()
     model = IMLENet(
+        classes=config.classes,
         input_channels=config.input_channels,
         signal_len=config.signal_len,
         beat_len=config.beat_len,
@@ -210,9 +317,19 @@ if __name__=='__main__':
         kernel_size=config.kernel_size,
         num_blocks_list=config.num_blocks_list,
         lstm_units=config.lstm_units,
-        classes=config.classes
-        )
-    input = torch.rand(32, 12, 1000, 1)
-    output = model(input)
-    print(output.shape)
-    print(output)
+    )
+    input = torch.randn(32, 12, 1000, 1)
+    print(input.size)
+    # input = torch.from_numpy(input_np)
+    output_torch = model(input)
+    
+    print(output_torch.shape)
+    
+    pred = torch.argmax(output_torch, dim=1)
+    print(pred)
+    
+    # # print(output_torch)
+    # output_tf = load_numpy(file_name="tf_output")
+    # # print(output.shape)
+    # # print(output)
+    # compare("output", output_torch, output_tf)
