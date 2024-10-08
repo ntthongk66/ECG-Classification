@@ -24,8 +24,13 @@ class Attention(nn.Module):
         super(Attention, self).__init__()
         self.return_sequences = return_sequences
         self.dim = dim
+        
+        # Weights for attention
+        self.W = None
+        self.b = None
+        self.V = None
 
-    def build(self, input_shape: Tuple[int, int, int]) -> None:
+    def build(self, input_shape: torch.Size) -> None:
         """Builds the attention layer.
 
         alpha = softmax(V.T * tanh(W.T * x + b))
@@ -39,14 +44,10 @@ class Attention(nn.Module):
         V: torch.Tensor
             The secondary weights of the attention layer.
         """
-        self.W = nn.Parameter(torch.Tensor(input_shape[-1], self.dim)).to(torch.device('cuda'))
-        self.b = nn.Parameter(torch.Tensor(input_shape[1], self.dim)).to(torch.device('cuda'))
-        self.V = nn.Parameter(torch.Tensor(self.dim, 1)).to(torch.device('cuda'))
+        self.W = nn.Parameter(torch.randn(input_shape[-1], self.dim)) #.to(torch.device('cuda'))
+        self.b = nn.Parameter(torch.zeros(input_shape[1], self.dim)) #.to(torch.device('cuda'))
+        self.V = nn.Parameter(torch.randn(self.dim, 1)) #.to(torch.device('cuda'))
 
-        # Initialize weights
-        nn.init.normal_(self.W)
-        nn.init.zeros_(self.b)
-        nn.init.normal_(self.V)
 
     def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         """Calculates the attention weights.
@@ -61,7 +62,7 @@ class Attention(nn.Module):
         Tuple[torch.Tensor, torch.Tensor]
             The attention weighted sum of the input tensor and the attention weights.
         """
-        if not hasattr(self, 'W'):
+        if self.W is None:
             self.build(x.size())
 
         e = torch.tanh(torch.matmul(x, self.W) + self.b)
@@ -252,19 +253,19 @@ class IMLENet(nn.Module):
         x = x.transpose(
             1, 2
         )  # (batch_size * input_channels * num_beats, time_steps, features)
-        self.beat_attention.build(x.size())
+
         x, _ = self.beat_attention(x)
 
         # Rhythm Level
         num_beats = self.signal_len // self.beat_len
         x = x.view(batch_size * self.input_channels, num_beats, -1)
         x, _ = self.lstm(x)
-        self.rhythm_attention.build(x.size())
+
         x, _ = self.rhythm_attention(x)
 
         # Channel Level
         x = x.view(batch_size, self.input_channels, -1)
-        self.channel_attention.build(x.size())
+
         x, _ = self.channel_attention(x)
 
         # Output Layer
