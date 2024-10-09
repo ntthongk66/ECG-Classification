@@ -115,9 +115,11 @@ class IMLENetLitModule(LightningModule):
         """
         x, y = batch
         logits = self.forward(x)
-        loss = self.criterion(logits, y)
-        preds = torch.argmax(logits, dim=1)
         y = torch.argmax(y, dim=1)
+        loss = self.criterion(logits, y)
+        preds = torch.sigmoid(logits)
+        preds = torch.argmax(logits, dim=1)
+        
         return loss, preds, y
 
     def training_step(

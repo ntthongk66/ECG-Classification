@@ -228,11 +228,11 @@ class IMLENet(nn.Module):
             batch_first=True,
             bidirectional=True,
         )
-        # self.rhythm_attention = Attention(input_dim=self.lstm_units * 2)
+
         self.rhythm_attention = Attention()
         
         # Channel Level
-        # self.channel_attention = Attention(input_dim=self.lstm_units * 2)
+
         self.channel_attention = Attention()
         
         # Output Layer
@@ -258,20 +258,27 @@ class IMLENet(nn.Module):
 
         # Rhythm Level
         num_beats = self.signal_len // self.beat_len
+        
+        # print("before reshape ", x.shape)
         x = x.view(batch_size * self.input_channels, num_beats, -1)
+        
+        # print('before: ', x.shape)
         x, _ = self.lstm(x)
 
+        # print("after", x.shape)
         x, _ = self.rhythm_attention(x)
 
+        # print("after rhymatt ", x.shape)
         # Channel Level
         x = x.view(batch_size, self.input_channels, -1)
-
+        # print("before channel att: ", x.shape)
         x, _ = self.channel_attention(x)
+        # print("after channel att: ", x.shape)
 
         # Output Layer
         x = self.fc(x)
-        outputs = x
-        return outputs
+        # outputs = torch.sigmoid(x)
+        return x
 
 
 """Configs for building the IMLE-Net model.
@@ -332,10 +339,11 @@ if __name__ == "__main__":
     output_torch = model(input)
     
     print(output_torch)
+    print(torch.sigmoid(output_torch))
     
     pred = torch.argmax(output_torch, dim=1)
-    print(pred)
-    print(pred.dtype)
+    # print(pred)
+    # print(pred.dtype)
     # # print(output_torch)
     # output_tf = load_numpy(file_name="tf_output")
     # # print(output.shape)
