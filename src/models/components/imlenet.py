@@ -121,7 +121,7 @@ class ResidualBlock(nn.Module):
         self.conv1 = nn.Conv1d(
             in_channels, out_channels, kernel_size, stride=stride, padding=padding
         )
-
+        self.dropout = nn.Dropout(p=0.1, inplace=False)
         self.bn1 = nn.BatchNorm1d(out_channels)
         self.conv2 = nn.Conv1d(
             out_channels, out_channels, kernel_size, stride=1, padding=kernel_size // 2
@@ -146,6 +146,7 @@ class ResidualBlock(nn.Module):
         out = self.conv1(x)
         # print(f"=== first conv, downsample:{self.Downsample} : {out.shape}")
         out = F.relu(out)
+        out = self.dropout(out)
         out = self.bn1(out)
 
         out = self.conv2(out)
@@ -158,6 +159,7 @@ class ResidualBlock(nn.Module):
         
         # print(f"=== third conv, downsample:{self.Downsample} : {out.shape}")
         out = F.relu(out)
+        out = self.dropout(out)
         out = self.bn2(out)
         return out
 
