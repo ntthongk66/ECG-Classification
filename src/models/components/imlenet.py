@@ -2,7 +2,6 @@ from typing import Tuple
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import math
 
 class Attention(nn.Module):
     """A class used to build the feed-forward attention layer.
@@ -75,33 +74,19 @@ class Attention(nn.Module):
 
         return torch.sum(output, dim=1), a
 
-# def relu_bn(inputs: torch.Tensor) -> torch.Tensor:
-#     """ReLU activation followed by Batch Normalization.
-
-#     Parameters
-#     ----------
-#     inputs: torch.Tensor
-#         The input tensor.
-
-#     Returns
-#     -------
-#     torch.Tensor
-#         ReLU and Batch Normalization applied to the input tensor.
-#     """
-#     bn_layer = nn.BatchNorm1d(
-#         num_features=inputs.size(-1),  # Normalize over the last dimension (feature map)
-#         eps=0.001,                     # epsilon
-#         momentum=0.01,                 # 1 - momentum in PyTorch (so momentum=0.99 becomes 1-0.99 = 0.01)
-#         affine=True                    # center=True and scale=True (learnable parameters)
-#     )
-#     # ReLU followed by BatchNorm
-#     relu = nn.ReLU()(inputs)
-#     # bn = nn.BatchNorm1d(inputs.size(1))(relu)  # BatchNorm1d for 3D input (batch_size, channels, length)
-#     bn = bn_layer(relu.view(-1, inputs.size(-1)))
-#     return bn.view(inputs.shape), relu
-
-
-
+class conv1d_tf(nn.Module):
+    def __init__(self, in_channels, out_channels, kernel_size, stride, padding):
+        super(conv1d_tf, self).__init__()
+        self.conv = nn.Conv1d(in_channels=in_channels,
+                              out_channels=out_channels,
+                              kernel_size=kernel_size,
+                              stride=stride,
+                              padding=padding)
+        
+    def forward(self, input):
+        out = self.conv(input)
+        out = F.relu(out)
+        return out
 
 class ResidualBlock(nn.Module):
     """Residual block with optional downsampling."""
@@ -118,12 +103,11 @@ class ResidualBlock(nn.Module):
         stride = 1 if not downsample else 2
         # Calculate padding to achieve 'same' padding
         padding = self.calculate_padding(kernel_size, stride)
-        self.conv1 = nn.Conv1d(
+        self.conv1 = conv1d_tf(
             in_channels, out_channels, kernel_size, stride=stride, padding=padding
         )
-        self.dropout = nn.Dropout(p=0.1, inplace=False)
         self.bn1 = nn.BatchNorm1d(out_channels)
-        self.conv2 = nn.Conv1d(
+        self.conv2 = conv1d_tf(
             out_channels, out_channels, kernel_size, stride=1, padding=kernel_size // 2
         )
         
@@ -133,7 +117,7 @@ class ResidualBlock(nn.Module):
         if downsample or in_channels != out_channels:
             # Adjust padding and stride for downsample convolution
             self.downsample = nn.Sequential(
-                nn.Conv1d(in_channels, out_channels, kernel_size=1, stride=stride),
+                conv1d_tf(in_channels, out_channels, kernel_size=1, stride=stride, padding=0),
                 nn.BatchNorm1d(out_channels),
             )
 
@@ -144,22 +128,12 @@ class ResidualBlock(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         out = self.conv1(x)
-        # print(f"=== first conv, downsample:{self.Downsample} : {out.shape}")
         out = F.relu(out)
-        out = self.dropout(out)
         out = self.bn1(out)
-
         out = self.conv2(out)
-        # print(f"=== second conv, downsample:{self.Downsample} : {out.shape}")
-    
         x = self.downsample(x)
-        # if self.Downsample:
-            # print(f"=== IF downsample: {x.shape}")
         out += x
-        
-        # print(f"=== third conv, downsample:{self.Downsample} : {out.shape}")
         out = F.relu(out)
-        out = self.dropout(out)
         out = self.bn2(out)
         return out
 
@@ -194,12 +168,21 @@ class IMLENet(nn.Module):
         # Beat Level
         # Calculate padding to achieve 'same' padding
         padding = (self.kernel_size - 1) // 2
-        self.beat_conv = nn.Conv1d(
+        # self.beat_conv = nn.Conv1d(
+        #     in_channels=1,
+        #     out_channels=self.start_filters,
+        #     kernel_size=self.kernel_size,
+        #     padding=padding,
+        # )
+        
+        self.beat_conv = conv1d_tf(
             in_channels=1,
             out_channels=self.start_filters,
             kernel_size=self.kernel_size,
-            padding=padding,
+            stride=1,
+            padding=padding
         )
+        
         num_filters = self.start_filters
 
         # Residual Blocks
