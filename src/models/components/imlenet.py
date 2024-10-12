@@ -107,7 +107,7 @@ class ResidualBlock(nn.Module):
             in_channels, out_channels, kernel_size, stride=stride, padding=padding
         )
         self.bn1 = nn.BatchNorm1d(out_channels)
-        self.conv2 = conv1d_tf(
+        self.conv2 = nn.Conv1d(
             out_channels, out_channels, kernel_size, stride=1, padding=kernel_size // 2
         )
         
