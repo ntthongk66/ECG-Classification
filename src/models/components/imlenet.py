@@ -101,24 +101,23 @@ class ResidualBlock(nn.Module):
         super(ResidualBlock, self).__init__()
         self.Downsample = downsample
         stride = 1 if not downsample else 2
-        # Calculate padding to achieve 'same' padding
         padding = self.calculate_padding(kernel_size, stride)
-        self.conv1 = conv1d_tf(
+        self.conv1 = nn.Conv1d(
             in_channels, out_channels, kernel_size, stride=stride, padding=padding
         )
-        self.bn1 = nn.BatchNorm1d(out_channels)
+        self.bn1 = nn.BatchNorm1d(out_channels, eps=0.001, momentum=0.01)
         self.conv2 = nn.Conv1d(
             out_channels, out_channels, kernel_size, stride=1, padding=kernel_size // 2
         )
         
 
-        self.bn2 = nn.BatchNorm1d(out_channels)
+        self.bn2 = nn.BatchNorm1d(out_channels, eps=0.001, momentum=0.01)
         self.downsample = nn.Sequential()
         if downsample or in_channels != out_channels:
             # Adjust padding and stride for downsample convolution
             self.downsample = nn.Sequential(
                 conv1d_tf(in_channels, out_channels, kernel_size=1, stride=stride, padding=0),
-                nn.BatchNorm1d(out_channels),
+                nn.BatchNorm1d(out_channels, eps=0.001, momentum=0.01),
             )
 
     def calculate_padding(self, kernel_size: int, stride: int) -> int:
@@ -167,7 +166,7 @@ class IMLENet(nn.Module):
         self.device = torch.device('cuda')
         # Beat Level
         # Calculate padding to achieve 'same' padding
-        padding = (self.kernel_size - 1) // 2
+        padding = ((self.kernel_size - 1) // 2)
         # self.beat_conv = nn.Conv1d(
         #     in_channels=1,
         #     out_channels=self.start_filters,
@@ -175,7 +174,7 @@ class IMLENet(nn.Module):
         #     padding=padding,
         # )
         
-        self.beat_conv = conv1d_tf(
+        self.beat_conv = nn.Conv1d(
             in_channels=1,
             out_channels=self.start_filters,
             kernel_size=self.kernel_size,
@@ -240,7 +239,8 @@ class IMLENet(nn.Module):
         )  # (batch_size * input_channels * num_beats, time_steps, features)
 
         x, _ = self.beat_attention(x)
-
+        print("attention", x.shape)
+        
         # Rhythm Level
         num_beats = self.signal_len // self.beat_len
         
