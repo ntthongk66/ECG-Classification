@@ -239,7 +239,7 @@ class IMLENet(nn.Module):
         )  # (batch_size * input_channels * num_beats, time_steps, features)
 
         x, _ = self.beat_attention(x)
-        print("attention", x.shape)
+        # print("attention", x.shape)
         
         # Rhythm Level
         num_beats = self.signal_len // self.beat_len

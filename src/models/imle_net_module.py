@@ -3,13 +3,7 @@ from typing import Any, Dict, Tuple
 import torch
 from lightning import LightningModule
 from torchmetrics import MaxMetric, MeanMetric
-from torchmetrics.classification.accuracy import Accuracy
-from torchmetrics.classification import (
-    Accuracy,
-    AUROC,
-    Specificity,
-    Recall,
-)
+from torchmetrics.classification.accuracy import Accuracy, MultilabelAccuracy
 
 torch.autograd.set_detect_anomaly(True)
 
@@ -68,14 +62,14 @@ class IMLENetLitModule(LightningModule):
         self.net = net
 
         # loss function
-        self.criterion = torch.nn.CrossEntropyLoss() #torch.nn.BCEWithLogitsLoss()
+        self.criterion = torch.nn.BCEWithLogitsLoss()
 
         num_classes = self.net.classes
 
         # metric objects for calculating and averaging accuracy across batches
-        self.train_acc = Accuracy(task="multiclass", num_classes=num_classes)
-        self.val_acc = Accuracy(task="multiclass", num_classes=num_classes)
-        self.test_acc = Accuracy(task="multiclass", num_classes=num_classes)
+        self.train_acc = MultilabelAccuracy(num_labels=num_classes)#Accuracy(task="multiclass", num_classes=num_classes)
+        self.val_acc = MultilabelAccuracy(num_labels=num_classes)
+        self.test_acc = MultilabelAccuracy(num_labels=num_classes)
 
         # for averaging loss across batches
         self.train_loss = MeanMetric()
@@ -115,11 +109,8 @@ class IMLENetLitModule(LightningModule):
         """
         x, y = batch
         logits = self.forward(x)
-        y = torch.argmax(y, dim=1)
-        
         loss = self.criterion(logits, y)
         preds = torch.sigmoid(logits)
-        preds = torch.argmax(logits, dim=1)
         return loss, preds, y
 
     def training_step(
