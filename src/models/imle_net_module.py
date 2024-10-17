@@ -4,6 +4,7 @@ import torch
 from lightning import LightningModule
 from torchmetrics import MaxMetric, MeanMetric
 from torchmetrics.classification.accuracy import Accuracy, MultilabelAccuracy
+from torchmetrics.classification import MultilabelF1Score, MultilabelAUROC
 
 torch.autograd.set_detect_anomaly(True)
 
@@ -68,8 +69,16 @@ class IMLENetLitModule(LightningModule):
 
         # metric objects for calculating and averaging accuracy across batches
         self.train_acc = MultilabelAccuracy(num_labels=num_classes)#Accuracy(task="multiclass", num_classes=num_classes)
+        self.train_f1 = MultilabelF1Score(num_labels=num_classes)
+        self.train_auc = MultilabelAUROC(num_labels=num_classes)
+        
         self.val_acc = MultilabelAccuracy(num_labels=num_classes)
+        self.val_f1 = MultilabelF1Score(num_labels=num_classes)
+        self.val_auc = MultilabelAUROC(num_labels=num_classes)
+        
         self.test_acc = MultilabelAccuracy(num_labels=num_classes)
+        self.test_f1 = MultilabelF1Score(num_labels=num_classes)
+        self.test_auc = MultilabelAUROC(num_labels=num_classes)
 
         # for averaging loss across batches
         self.train_loss = MeanMetric()
@@ -78,6 +87,8 @@ class IMLENetLitModule(LightningModule):
 
         # for tracking best so far validation accuracy
         self.val_acc_best = MaxMetric()
+        self.val_f1_best = MaxMetric()
+        self.val_auc_best = MaxMetric()
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Perform a forward pass through the model `self.net`.
@@ -111,7 +122,7 @@ class IMLENetLitModule(LightningModule):
         logits = self.forward(x)
         loss = self.criterion(logits, y)
         preds = torch.sigmoid(logits)
-        return loss, preds, y
+        return loss, preds, y.to(torch.int)
 
     def training_step(
         self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int
@@ -128,8 +139,12 @@ class IMLENetLitModule(LightningModule):
         # update and log metrics
         self.train_loss(loss)
         self.train_acc(preds, targets)
+        self.train_f1(preds, targets)
+        self.train_auc(preds, targets)
         self.log("train/loss", self.train_loss, on_step=False, on_epoch=True, prog_bar=True)
         self.log("train/acc", self.train_acc, on_step=False, on_epoch=True, prog_bar=True)
+        self.log("train/F1", self.train_f1, on_step=False, on_epoch=True, prog_bar=True)
+        self.log("train/AUC", self.train_auc, on_step=False, on_epoch=True, prog_bar=True)
 
         # return loss or backpropagation will fail
         return loss
@@ -150,16 +165,28 @@ class IMLENetLitModule(LightningModule):
         # update and log metrics
         self.val_loss(loss)
         self.val_acc(preds, targets)
+        self.val_f1(preds, targets)
+        self.val_auc(preds, targets)
         self.log("val/loss", self.val_loss, on_step=False, on_epoch=True, prog_bar=True)
         self.log("val/acc", self.val_acc, on_step=False, on_epoch=True, prog_bar=True)
+        self.log("val/F1", self.val_f1, on_step=False, on_epoch=True, prog_bar=True)
+        self.log("val/AUC", self.val_auc, on_step=False, on_epoch=True, prog_bar=True)
 
     def on_validation_epoch_end(self) -> None:
         "Lightning hook that is called when a validation epoch ends."
         acc = self.val_acc.compute()  # get current val acc
         self.val_acc_best(acc)  # update best so far val acc
+        
+        f1 = self.val_f1.compute()
+        self.val_f1_best(f1)
+        
+        auc_roc = self.val_auc.compute()
+        self.val_auc_best(auc_roc)
         # log `val_acc_best` as a value through `.compute()` method, instead of as a metric object
         # otherwise metric would be reset by lightning after each epoch
         self.log("val/acc_best", self.val_acc_best.compute(), sync_dist=True, prog_bar=True)
+        self.log("val/F1_best", self.val_f1_best.compute(), sync_dist=True, prog_bar=True)
+        self.log("val/AUC_best", self.val_auc_best.compute(), sync_dist=True, prog_bar=True)
 
     def test_step(self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int) -> None:
         """Perform a single test step on a batch of data from the test set.
@@ -214,115 +241,3 @@ class IMLENetLitModule(LightningModule):
                 },
             }
         return {"optimizer": optimizer}
-
-# ! ===============================================
-# from typing import Any, Dict, Tuple
-
-# import torch
-# from lightning import LightningModule
-# from torchmetrics import MaxMetric, MeanMetric
-# from torchmetrics.classification import (
-#     Accuracy,
-#     AUROC,
-#     Specificity,
-#     Recall,
-# )
-
-
-# class IMLENetLitModule(LightningModule):
-#     def __init__(
-#         self,
-#         net: torch.nn.Module,
-#         optimizer: torch.optim.Optimizer,
-#         scheduler: torch.optim.lr_scheduler,
-#         compile: bool,
-#     ) -> None:
-#         super().__init__()
-
-#         self.save_hyperparameters(logger=False)
-#         self.net = net
-#         self.criterion = torch.nn.CrossEntropyLoss()
-#         num_classes = self.net.classes
-
-#         # Metrics for each stage
-#         self.train_metrics = self._create_metrics(num_classes)
-#         self.val_metrics = self._create_metrics(num_classes)
-#         self.test_metrics = self._create_metrics(num_classes)
-
-#         # for tracking best so far validation accuracy
-#         self.val_acc_best = MaxMetric()
-
-#     def _create_metrics(self, num_classes):
-#         return torch.nn.ModuleDict({
-#             "acc": Accuracy(task="multiclass", num_classes=num_classes),
-#             "auc": AUROC(task="multiclass", num_classes=num_classes),
-#             "specificity": Specificity(task="multiclass", num_classes=num_classes),
-#             "sensitivity": Recall(task="multiclass", num_classes=num_classes),
-#             "loss": MeanMetric(),
-#         })
-
-#     def forward(self, x: torch.Tensor) -> torch.Tensor:
-#         return self.net(x)
-
-#     def on_train_start(self) -> None:
-#         self.val_acc_best.reset()
-
-#     def model_step(
-#         self, batch: Tuple[torch.Tensor, torch.Tensor]
-#     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-#         x, y = batch
-#         logits = self.forward(x)
-#         loss = self.criterion(logits, y)
-#         preds = torch.argmax(logits, dim=1)
-#         # y = torch.argmax(y, dim=1)
-#         return loss, logits, preds, y
-
-#     def _update_metrics(self, stage, loss, logits, preds, targets):
-#         metrics = getattr(self, f"{stage}_metrics")
-#         metrics["loss"](loss)
-#         metrics["acc"](preds, targets)
-#         metrics["auc"](logits, targets)
-#         metrics["specificity"](preds, targets)
-#         metrics["sensitivity"](preds, targets)
-
-#         for metric_name, metric in metrics.items():
-#             self.log(f"{stage}/{metric_name}", metric, on_step=True, on_epoch=True, prog_bar=True)
-
-#     def training_step(
-#         self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int
-#     ) -> torch.Tensor:
-#         loss, logits, preds, targets = self.model_step(batch)
-#         self._update_metrics("train", loss, logits, preds, targets)
-#         return loss
-
-#     def validation_step(self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int) -> None:
-#         loss, logits, preds, targets = self.model_step(batch)
-#         self._update_metrics("val", loss, logits, preds, targets)
-
-#     def on_validation_epoch_end(self) -> None:
-#         acc = self.val_metrics["acc"].compute()
-#         self.val_acc_best(acc)
-#         self.log("val/acc_best", self.val_acc_best.compute(), sync_dist=True, prog_bar=True)
-
-#     def test_step(self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int) -> None:
-#         loss, logits, preds, targets = self.model_step(batch)
-#         self._update_metrics("test", loss, logits, preds, targets)
-
-#     def setup(self, stage: str) -> None:
-#         if self.hparams.compile and stage == "fit":
-#             self.net = torch.compile(self.net)
-
-#     def configure_optimizers(self) -> Dict[str, Any]:
-#         optimizer = self.hparams.optimizer(params=self.trainer.model.parameters())
-#         if self.hparams.scheduler is not None:
-#             scheduler = self.hparams.scheduler(optimizer=optimizer)
-#             return {
-#                 "optimizer": optimizer,
-#                 "lr_scheduler": {
-#                     "scheduler": scheduler,
-#                     "monitor": "val/loss",
-#                     "interval": "epoch",
-#                     "frequency": 1,
-#                 },
-#             }
-#         return {"optimizer": optimizer}

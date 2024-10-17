@@ -43,9 +43,9 @@ class Attention(nn.Module):
         V: torch.Tensor
             The secondary weights of the attention layer.
         """
-        self.W = nn.Parameter(torch.randn(input_shape[-1], self.dim)).to(torch.device('cuda'))
-        self.b = nn.Parameter(torch.zeros(input_shape[1], self.dim)).to(torch.device('cuda'))
-        self.V = nn.Parameter(torch.randn(self.dim, 1)).to(torch.device('cuda'))
+        self.W = nn.Parameter(torch.randn(input_shape[-1], self.dim))#.to(torch.device('cuda'))
+        self.b = nn.Parameter(torch.zeros(input_shape[1], self.dim))#.to(torch.device('cuda'))
+        self.V = nn.Parameter(torch.randn(self.dim, 1))#.to(torch.device('cuda'))
 
 
     def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -167,12 +167,6 @@ class IMLENet(nn.Module):
         # Beat Level
         # Calculate padding to achieve 'same' padding
         padding = ((self.kernel_size - 1) // 2)
-        # self.beat_conv = nn.Conv1d(
-        #     in_channels=1,
-        #     out_channels=self.start_filters,
-        #     kernel_size=self.kernel_size,
-        #     padding=padding,
-        # )
         
         self.beat_conv = nn.Conv1d(
             in_channels=1,
@@ -201,7 +195,6 @@ class IMLENet(nn.Module):
         self.residual_blocks = nn.Sequential(*blocks)
 
         # Beat Attention
-        # self.beat_attention = Attention(input_dim=num_filters)
         self.beat_attention = Attention()
 
         # Rhythm Level
@@ -216,7 +209,6 @@ class IMLENet(nn.Module):
         self.rhythm_attention = Attention()
         
         # Channel Level
-
         self.channel_attention = Attention()
         
         # Output Layer
@@ -229,9 +221,7 @@ class IMLENet(nn.Module):
         x = x.view(-1, 1, self.beat_len)  # (batch_size * input_channels * num_beats, 1, beat_len)
 
         # Beat Level
-        # print(x.shape) # (7680, 1, 50)
         x = self.beat_conv(x)
-        # print(f"==== beat_conv1d {x.shape}") # (7680, 32, 49)
         x = F.relu(x)
         x = self.residual_blocks(x)
         x = x.transpose(
@@ -239,30 +229,23 @@ class IMLENet(nn.Module):
         )  # (batch_size * input_channels * num_beats, time_steps, features)
 
         x, _ = self.beat_attention(x)
-        # print("attention", x.shape)
         
         # Rhythm Level
         num_beats = self.signal_len // self.beat_len
         
-        # print("before reshape ", x.shape)
         x = x.view(batch_size * self.input_channels, num_beats, -1)
         
-        # print('before: ', x.shape)
         x, _ = self.lstm(x)
 
-        # print("after", x.shape)
         x, _ = self.rhythm_attention(x)
 
-        # print("after rhymatt ", x.shape)
         # Channel Level
         x = x.view(batch_size, self.input_channels, -1)
-        # print("before channel att: ", x.shape)
         x, _ = self.channel_attention(x)
-        # print("after channel att: ", x.shape)
 
         # Output Layer
         x = self.fc(x)
-        # outputs = torch.sigmoid(x)
+
         return x
 
 
