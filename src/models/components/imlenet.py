@@ -43,9 +43,9 @@ class Attention(nn.Module):
         V: torch.Tensor
             The secondary weights of the attention layer.
         """
-        self.W = nn.Parameter(torch.randn(input_shape[-1], self.dim))#.to(torch.device('cuda'))
-        self.b = nn.Parameter(torch.zeros(input_shape[1], self.dim))#.to(torch.device('cuda'))
-        self.V = nn.Parameter(torch.randn(self.dim, 1))#.to(torch.device('cuda'))
+        self.W = nn.Parameter(torch.randn(input_shape[-1], self.dim)).to(torch.device('cuda'))
+        self.b = nn.Parameter(torch.zeros(input_shape[1], self.dim)).to(torch.device('cuda'))
+        self.V = nn.Parameter(torch.randn(self.dim, 1)).to(torch.device('cuda'))
 
 
     def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
