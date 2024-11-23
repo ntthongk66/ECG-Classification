@@ -3,6 +3,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+
 class Attention(nn.Module):
     """A class used to build the feed-forward attention layer.
 
@@ -23,7 +24,7 @@ class Attention(nn.Module):
         super(Attention, self).__init__()
         self.return_sequences = return_sequences
         self.dim = dim
-        
+
         # Weights for attention
         self.W = None
         self.b = None
@@ -43,10 +44,12 @@ class Attention(nn.Module):
         V: torch.Tensor
             The secondary weights of the attention layer.
         """
-        self.W = nn.Parameter(torch.randn(input_shape[-1], self.dim)).to(torch.device('cuda'))
-        self.b = nn.Parameter(torch.zeros(input_shape[1], self.dim)).to(torch.device('cuda'))
-        self.V = nn.Parameter(torch.randn(self.dim, 1)).to(torch.device('cuda'))
-
+        self.W = nn.Parameter(torch.randn(
+            input_shape[-1], self.dim)).to(torch.device('cuda'))
+        self.b = nn.Parameter(torch.zeros(input_shape[1], self.dim)).to(
+            torch.device('cuda'))
+        self.V = nn.Parameter(torch.randn(self.dim, 1)
+                              ).to(torch.device('cuda'))
 
     def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         """Calculates the attention weights.
@@ -74,6 +77,7 @@ class Attention(nn.Module):
 
         return torch.sum(output, dim=1), a
 
+
 class conv1d_tf(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size, stride, padding):
         super(conv1d_tf, self).__init__()
@@ -82,11 +86,12 @@ class conv1d_tf(nn.Module):
                               kernel_size=kernel_size,
                               stride=stride,
                               padding=padding)
-        
+
     def forward(self, input):
         out = self.conv(input)
         out = F.relu(out)
         return out
+
 
 class ResidualBlock(nn.Module):
     """Residual block with optional downsampling."""
@@ -109,14 +114,14 @@ class ResidualBlock(nn.Module):
         self.conv2 = nn.Conv1d(
             out_channels, out_channels, kernel_size, stride=1, padding=kernel_size // 2
         )
-        
 
         self.bn2 = nn.BatchNorm1d(out_channels, eps=0.001, momentum=0.01)
         self.downsample = nn.Sequential()
         if downsample or in_channels != out_channels:
             # Adjust padding and stride for downsample convolution
             self.downsample = nn.Sequential(
-                conv1d_tf(in_channels, out_channels, kernel_size=1, stride=stride, padding=0),
+                conv1d_tf(in_channels, out_channels,
+                          kernel_size=1, stride=stride, padding=0),
                 nn.BatchNorm1d(out_channels, eps=0.001, momentum=0.01),
             )
 
@@ -167,7 +172,7 @@ class IMLENet(nn.Module):
         # Beat Level
         # Calculate padding to achieve 'same' padding
         padding = ((self.kernel_size - 1) // 2)
-        
+
         self.beat_conv = nn.Conv1d(
             in_channels=1,
             out_channels=self.start_filters,
@@ -175,7 +180,7 @@ class IMLENet(nn.Module):
             stride=1,
             padding=padding
         )
-        
+
         num_filters = self.start_filters
 
         # Residual Blocks
@@ -207,18 +212,19 @@ class IMLENet(nn.Module):
         )
 
         self.rhythm_attention = Attention()
-        
+
         # Channel Level
         self.channel_attention = Attention()
-        
+
         # Output Layer
         self.fc = nn.Linear(self.lstm_units * 2, self.classes)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         # x shape: (batch_size, input_channels, signal_len, 1)
         batch_size = x.size(0)
         x = x.squeeze(-1)  # (batch_size, input_channels, signal_len)
-        x = x.view(-1, 1, self.beat_len)  # (batch_size * input_channels * num_beats, 1, beat_len)
+        # (batch_size * input_channels * num_beats, 1, beat_len)
+        x = x.view(-1, 1, self.beat_len)
 
         # Beat Level
         x = self.beat_conv(x)
@@ -228,25 +234,25 @@ class IMLENet(nn.Module):
             1, 2
         )  # (batch_size * input_channels * num_beats, time_steps, features)
 
-        x, _ = self.beat_attention(x)
-        
+        x, a_beat = self.beat_attention(x)
+
         # Rhythm Level
         num_beats = self.signal_len // self.beat_len
-        
+
         x = x.view(batch_size * self.input_channels, num_beats, -1)
-        
+
         x, _ = self.lstm(x)
 
-        x, _ = self.rhythm_attention(x)
+        x, a_rhythm = self.rhythm_attention(x)
 
         # Channel Level
         x = x.view(batch_size, self.input_channels, -1)
-        x, _ = self.channel_attention(x)
+        x, a_channel = self.channel_attention(x)
 
         # Output Layer
         x = self.fc(x)
 
-        return x
+        return x, a_beat, a_rhythm, a_channel
 
 
 """Configs for building the IMLE-Net model.
@@ -305,10 +311,10 @@ if __name__ == "__main__":
     print(input.size)
     # input = torch.from_numpy(input_np)
     output_torch = model(input)
-    
+
     print(output_torch)
     print(torch.sigmoid(output_torch))
-    
+
     pred = torch.argmax(output_torch, dim=1)
     # print(pred)
     # print(pred.dtype)

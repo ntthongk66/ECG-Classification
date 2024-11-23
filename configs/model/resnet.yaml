@@ -1,0 +1,31 @@
+_target_: src.models.resnet_module.ResNetLitModule
+
+optimizer:
+  _target_: torch.optim.Adam
+  _partial_: true
+  lr: 0.001
+  weight_decay: 0.0
+
+scheduler:
+  _target_: torch.optim.lr_scheduler.ReduceLROnPlateau
+  _partial_: true
+  mode: min
+  factor: 0.1
+  patience: 10
+
+net:
+  _target_: src.models.components.resnetbase.ECGModel
+  num_leads: 12
+  num_outputs: 5
+  num_resnet_blks: -1
+  net_filter_size: [64, 128, 196, 256, 320]
+  net_downsample_factors: [1, 4, 4, 4, 4]
+  dropout_resnet: 0.5
+  kernel_size: 17
+  seq_length: 1000
+  se_reduction: 8
+  dont_use_se_layer: false
+  batch_size: 32
+
+# compile model for faster training with pytorch 2.0
+compile: false

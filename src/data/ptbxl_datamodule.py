@@ -22,7 +22,7 @@ class PTBXLDataModule(LightningDataModule):
         batch_size: int = 32,
         num_workers: int = 0,
         pin_memory: bool = False,
-        sub_disease: bool = True,
+        sub_disease: bool = False,
     ) -> None:
         """_summary_
 
