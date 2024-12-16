@@ -5,10 +5,10 @@ import wfdb
 import numpy as np
 import pandas as pd
 import torch
-from typing import  Optional
+from typing import Optional
 
 from torch.utils.data import DataLoader, Dataset, WeightedRandomSampler
-from pytorch_lightning import LightningDataModule
+from lightning import LightningDataModule
 
 
 def anom_to_label(anom):
@@ -261,7 +261,8 @@ class CustomTensorDataset(Dataset):
 
     def __len__(self):
         return self.tensors[0].size(0)
-    
+
+
 class LUDBDataModule(LightningDataModule):
     def __init__(
         self,
@@ -286,6 +287,10 @@ class LUDBDataModule(LightningDataModule):
         self.X_test: Optional[Dataset] = None
         self.y_seg_test: Optional[Dataset] = None
         self.y_cls_test: Optional[Dataset] = None
+
+    def prepare_data(self) -> None:
+
+        return super().prepare_data()
 
     def setup(self, stage: Optional[str] = None):
         ludb_files = [
@@ -348,9 +353,29 @@ class LUDBDataModule(LightningDataModule):
 
         return test_loader
 
+    #! dang dung thu val dataloader xem nhu nao.
+    def val_dataloader(self):
+        test_dataset = CustomTensorDataset(
+            tensors=(self.X_test, self.y_seg_test, self.y_cls_test))
+        test_loader = DataLoader(
+            test_dataset, batch_size=self.batch_size, shuffle=False)
+
+        # data, seg_target, cls_target = next(iter(test_loader))
+        # print(f"Input shape: {data.shape}")
+        # print(f"Segmentation target shape: {seg_target.shape}")
+        # print(f"Classification target shape: {cls_target.shape}")
+
+        return test_loader
+
 
 if __name__ == "__main__":
     dm = LUDBDataModule()
     dm.setup()
     train_loader = dm.train_dataloader()
     test_loader = dm.test_dataloader()
+
+    x, y_seg_tg, y_cls_tg = next(iter(train_loader))
+
+    print(x.shape)
+    print(y_seg_tg.shape)
+    print(y_cls_tg.shape)

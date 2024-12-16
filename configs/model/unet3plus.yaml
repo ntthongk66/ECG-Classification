@@ -1,0 +1,32 @@
+_target_: src.models.unet3plus_module.Unet3PlusLitModule
+
+alpha: 1.0
+beta: 1.0
+
+focal_loss:
+  _target_: src.models.components.loss.focal_loss.FocalLoss
+  gamma: 1.0
+
+
+
+optimizer:
+  _target_: torch.optim.SGD
+  _partial_: true
+  lr: 0.001
+  weight_decay: 0.0
+
+scheduler:
+  _target_: torch.optim.lr_scheduler.CosineAnnealingLR
+  _partial_: true
+  T_max: 100
+  verbose: True,
+  eta_min: 1e-5
+
+net:
+  _target_: src.models.components.unet3plus.ECGUNet3pCGM
+  n_channels: 4
+  mask: true
+  
+
+# compile model for faster training with pytorch 2.0
+compile: false
