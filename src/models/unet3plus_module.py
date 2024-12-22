@@ -89,7 +89,7 @@ class Unet3PlusLitModule(LightningModule):
         return loss, loss_seg, loss_cls
 
     def training_step(
-        self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int
+        self, batch: Tuple[torch.Tensor, torch.Tensor, torch.Tensor], batch_idx: int
     ) -> torch.Tensor:
         """Perform a single training step on a batch of data from the training set.
 
@@ -134,15 +134,10 @@ class Unet3PlusLitModule(LightningModule):
         self.log("val/loss_cls", self.val_loss_cls, on_step=False, on_epoch=True, prog_bar=True)
         
     def on_validation_epoch_end(self) -> None:
-        # "Lightning hook that is called when a validation epoch ends."
-        # acc = self.val_acc.compute()  # get current val acc
-        # self.val_acc_best(acc)  # update best so far val acc
-        # # log `val_acc_best` as a value through `.compute()` method, instead of as a metric object
-        # # otherwise metric would be reset by lightning after each epoch
-        # self.log("val/acc_best", self.val_acc_best.compute(), sync_dist=True, prog_bar=True)
+       
         pass
 
-    def test_step(self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int) -> None:
+    def test_step(self, batch: Tuple[torch.Tensor, torch.Tensor, torch.Tensor], batch_idx: int) -> None:
         """Perform a single test step on a batch of data from the test set.
 
         :param batch: A batch of data (a tuple) containing the input tensor of images and target
@@ -196,5 +191,5 @@ class Unet3PlusLitModule(LightningModule):
         return {"optimizer": optimizer}
 
 
-# if __name__ == "__main__":
-#     _ = MNISTLitModule(None, None, None, None)
+if __name__ == "__main__":
+    _ = Unet3PlusLitModule(None, None, None, None, None, None, None)

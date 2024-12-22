@@ -327,3 +327,11 @@ class ECGUNet3pCGM(nn.Module):
             X_seg = self.apply_cls_mask(X_seg, X_cls)
 
         return X_seg, X_cls_prob
+
+
+if __name__=='__main__':
+    model = ECGUNet3pCGM()
+    x = torch.rand((32, 1, 2000))
+    a, b = model(x)
+    print(a.shape)
+    print(b.shape)
