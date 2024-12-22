@@ -331,7 +331,8 @@ class ECGUNet3pCGM(nn.Module):
 
 if __name__=='__main__':
     model = ECGUNet3pCGM()
-    x = torch.rand((32, 1, 2000))
+    x = torch.rand((32, 1, 5000))
     a, b = model(x)
+    print(a)
     print(a.shape)
     print(b.shape)

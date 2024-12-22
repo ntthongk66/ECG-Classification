@@ -1,9 +1,11 @@
 from typing import Any, Dict, Tuple
 
 import torch
+import wandb
 from lightning import LightningModule
 from torchmetrics import MaxMetric, MeanMetric
 from torchmetrics.classification.accuracy import Accuracy
+from src.utils.utils import draw_segmentation_timeline
 
 
 class Unet3PlusLitModule(LightningModule):
@@ -116,7 +118,7 @@ class Unet3PlusLitModule(LightningModule):
         "Lightning hook that is called when a training epoch ends."
         pass
 
-    def validation_step(self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int) -> None:
+    def validation_step(self, batch: Tuple[torch.Tensor, torch.Tensor, torch.Tensor], batch_idx: int) -> None:
         """Perform a single validation step on a batch of data from the validation set.
 
         :param batch: A batch of data (a tuple) containing the input tensor of images and target
@@ -133,9 +135,22 @@ class Unet3PlusLitModule(LightningModule):
         self.log("val/loss_seg", self.val_loss_seg, on_step=False, on_epoch=True, prog_bar=True)
         self.log("val/loss_cls", self.val_loss_cls, on_step=False, on_epoch=True, prog_bar=True)
         
+        if batch_idx == 1:
+            x, seg_tg, cls_tg = batch
+             
+            seg_pred, cls_pred = self.forward(x)
+            
+            pred_img = draw_segmentation_timeline(ecg_signal=x.cpu().numpy()[0], ecg_segment=seg_pred.cpu().numpy()[0], length=5000)
+            tg_img = draw_segmentation_timeline(ecg_signal=x.cpu().numpy()[0], ecg_segment=seg_tg.cpu().numpy()[0], length=5000, is_gt=True)
+            
+            wandb.log({"pred": wandb.Image(pred_img)})
+            wandb.log({"gt": wandb.Image(tg_img)})
+            
+        
     def on_validation_epoch_end(self) -> None:
-       
+        
         pass
+    
 
     def test_step(self, batch: Tuple[torch.Tensor, torch.Tensor, torch.Tensor], batch_idx: int) -> None:
         """Perform a single test step on a batch of data from the test set.

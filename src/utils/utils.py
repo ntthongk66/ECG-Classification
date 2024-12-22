@@ -1,4 +1,7 @@
 import warnings
+import matplotlib.pyplot as plt
+import numpy as np
+
 from importlib.util import find_spec
 from typing import Any, Callable, Dict, Optional, Tuple
 
@@ -117,3 +120,92 @@ def get_metric_value(metric_dict: Dict[str, Any], metric_name: Optional[str]) ->
     log.info(f"Retrieved metric value! <{metric_name}={metric_value}>")
 
     return metric_value
+
+def draw_segmentation_timeline(ecg_signal, ecg_segment, length=5000, is_gt=False):
+    """
+    Draw segmentation timeline for a single ECG lead
+    
+    Parameters:
+    -----------
+    ecg_signal : numpy.ndarray
+        Single lead ECG signal with shape (1, 5000)
+    scg_segment : numpy.ndarray
+        Segmentation data with shape (1, 4, 5000)
+    length : int
+        Length of signal to plot (default: 5000)
+    """
+    # Check input dimensions
+    # if ecg_signal.shape[0] != 1 or ecg_segment.shape[1] != 4:
+    #     print('Input should be for a single lead')
+    #     return
+        
+    # Adjust length if signal is shorter than specified length
+    if ecg_signal.shape[-1] < length:
+        length = ecg_signal.shape[-1]
+    
+    if not is_gt:
+        predicted_classes = np.argmax(ecg_segment, axis=0)
+
+        # Convert to one-hot encoding
+        ecg_segment = np.zeros((5000, 4))
+        ecg_segment[np.arange(5000), predicted_classes] = 1
+        ecg_segment = ecg_segment.T
+    
+    # Extract the segments for the single lead
+      # shape becomes (4, 5000)
+    
+    # Create a figure and axis
+    fig, ax = plt.subplots(figsize=(36, 6))
+    
+    # Define colors for each segment
+    colors = ['red', 'green', 'blue', 'yellow']
+    
+    # Create a single timeline
+    timeline = np.zeros(length)
+    for i in range(4):
+        timeline[ecg_segment[i] == 1] = i + 1
+    
+    # Plot the timeline with colored segments
+    for i in range(1, 5):
+        ax.fill_between(range(length), -0.5, 1, 
+                       where=timeline==i, 
+                       facecolor=colors[i-1], 
+                       alpha=0.3)
+    
+    # Plot the ECG signal
+    plt.plot(np.arange(length), ecg_signal[0, :length], color='black')
+    
+    # Remove y-axis ticks and labels
+    ax.set_yticks([])
+    ax.set_yticklabels([])
+    
+    # Add labels and title
+    plt.xlabel('Time (ms)')
+    plt.ylabel('Amplitude')
+    ax.set_title('ECG Segmentation Timeline')
+    
+    # Add a legend
+    legend_elements = [plt.Rectangle((0,0),1,1, facecolor=colors[i], alpha=0.7) 
+                      for i in range(4)]
+    ax.legend(legend_elements, ['p', 'qrs', 't', 'None'],
+             loc='upper center', 
+             bbox_to_anchor=(0.5, -0.15), 
+             ncol=4)
+    
+    # Add grid
+    ax.grid(True, which='both', linestyle='--', color='gray', alpha=0.5)
+    
+    # Draw the canvas
+    fig.canvas.draw()
+    
+    # Convert to numpy array
+    data = np.frombuffer(fig.canvas.buffer_rgba(), dtype=np.uint8)
+    data = data.reshape(fig.canvas.get_width_height()[::-1] + (4,))
+    
+    # Convert from RGBA to RGB
+    rgb_data = data[:, :, :3]
+    
+    # Close the figure to free memory
+    plt.close(fig)
+    
+    return rgb_data
