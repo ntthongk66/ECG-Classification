@@ -363,6 +363,12 @@ if __name__ == "__main__":
 
     x, y_seg_tg, y_cls_tg = next(iter(test_loader))
 
-    print(y_seg_tg)
+    print(y_seg_tg.shape)
+    
+    y_seg_tg_np = y_seg_tg.cpu().numpy()
+    
+
+    
+    np.save('sample.npy', y_seg_tg_np)
 
     

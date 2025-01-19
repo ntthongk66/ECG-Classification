@@ -6,6 +6,7 @@ from lightning import LightningModule
 from torchmetrics import MaxMetric, MeanMetric
 from torchmetrics.classification.accuracy import Accuracy
 from src.utils.utils import draw_segmentation_timeline
+from src.utils.metric.segment import *
 
 
 class Unet3PlusLitModule(LightningModule):
@@ -53,6 +54,35 @@ class Unet3PlusLitModule(LightningModule):
         self.alpha = alpha
         self.beta = beta
 
+        self.wave_order = ['P_onset', 'P_offset', 'QRS_onset', 'QRS_offset', 'T_onset', 'T_offset']
+        
+        # for val/test process
+
+        # Initialize metrics for P wave
+        self.total_P_onset_tp = 0
+        self.total_P_onset_fp = 0
+        self.total_P_onset_fn = 0
+        self.total_P_offset_tp = 0
+        self.total_P_offset_fp = 0
+        self.total_P_offset_fn = 0
+
+        # Initialize metrics for QRS complex
+        self.total_QRS_onset_tp = 0
+        self.total_QRS_onset_fp = 0
+        self.total_QRS_onset_fn = 0
+        self.total_QRS_offset_tp = 0
+        self.total_QRS_offset_fp = 0
+        self.total_QRS_offset_fn = 0
+
+        # Initialize metrics for T wave
+        self.total_T_onset_tp = 0
+        self.total_T_onset_fp = 0
+        self.total_T_onset_fn = 0
+        self.total_T_offset_tp = 0
+        self.total_T_offset_fp = 0
+        self.total_T_offset_fn = 0
+        
+        
         
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Perform a forward pass through the model `self.net`.
@@ -88,7 +118,7 @@ class Unet3PlusLitModule(LightningModule):
         loss_seg = self.loss_func_seg(seg_output, torch.argmax(seg_target, dim=1))
         
         loss = self.alpha * loss_seg + self.beta * loss_cls
-        return loss, loss_seg, loss_cls
+        return loss, loss_seg, loss_cls, seg_target, seg_output
 
     def training_step(
         self, batch: Tuple[torch.Tensor, torch.Tensor, torch.Tensor], batch_idx: int
@@ -100,7 +130,7 @@ class Unet3PlusLitModule(LightningModule):
         :param batch_idx: The index of the current batch.
         :return: A tensor of losses between model predictions and targets.
         """
-        loss, loss_seg, loss_cls = self.model_step(batch)
+        loss, loss_seg, loss_cls, _, _ = self.model_step(batch)
 
         # update and log metrics
         self.train_loss(loss)
@@ -125,7 +155,7 @@ class Unet3PlusLitModule(LightningModule):
             labels.
         :param batch_idx: The index of the current batch.
         """
-        loss, seg_loss, cls_loss = self.model_step(batch)
+        loss, seg_loss, cls_loss, seg_target, seg_output = self.model_step(batch)
 
         # update and log metrics
         self.val_loss(loss)
@@ -134,6 +164,19 @@ class Unet3PlusLitModule(LightningModule):
         self.log("val/loss", self.val_loss, on_step=False, on_epoch=True, prog_bar=True)
         self.log("val/loss_seg", self.val_loss_seg, on_step=False, on_epoch=True, prog_bar=True)
         self.log("val/loss_cls", self.val_loss_cls, on_step=False, on_epoch=True, prog_bar=True)
+        
+        seg_output_np = seg_output.cpu().numpy()[:, :, 500:3500]
+        seg_target_np = seg_target.cpu().numpy()[:, :, 500:3500]
+        
+        metrics = calculate_wave_metrics(seg_target_np, seg_output_np, tolerance=75)
+        
+        for component in self.wave_order:
+            values = metrics[component]
+            
+            setattr(self, f"total_{component}_tp", getattr(self, f"total_{component}_tp") + values['true_positives'])
+            setattr(self, f"total_{component}_fp", getattr(self, f"total_{component}_fp") + values['false_positives'])
+            setattr(self, f"total_{component}_fn", getattr(self, f"total_{component}_fn") + values['false_negatives'])
+    
         
         if batch_idx == 1:
             x, seg_tg, cls_tg = batch
@@ -149,6 +192,65 @@ class Unet3PlusLitModule(LightningModule):
         
     def on_validation_epoch_end(self) -> None:
         
+        
+# Calculate metrics for each wave component
+        result_P_onset = calculate_metrics(
+            tp=self.total_P_onset_tp,
+            fn=self.total_P_onset_fn,
+            fp=self.total_P_onset_fp
+        )  
+    
+        result_P_offset = calculate_metrics(
+            tp=self.total_P_offset_tp,
+            fn=self.total_P_offset_fn,
+            fp=self.total_P_offset_fp
+        )
+
+        result_QRS_onset = calculate_metrics(
+            tp=self.total_QRS_onset_tp,
+            fn=self.total_QRS_onset_fn,
+            fp=self.total_QRS_onset_fp
+        )
+
+        result_QRS_offset = calculate_metrics(
+            tp=self.total_QRS_offset_tp,
+            fn=self.total_QRS_offset_fn,
+            fp=self.total_QRS_offset_fp
+        )
+
+        result_T_onset = calculate_metrics(
+            tp=self.total_T_onset_tp,
+            fn=self.total_T_onset_fn,
+            fp=self.total_T_onset_fp
+        )
+
+        result_T_offset = calculate_metrics(
+            tp=self.total_T_offset_tp,
+            fn=self.total_T_offset_fn,
+            fp=self.total_T_offset_fp
+        )
+        
+        
+        wandb.log({
+            "val/F1_P_onset": result_P_onset["f1_score"],
+            "val/F1_P_offset": result_P_offset["f1_score"],
+            "val/F1_QRS_onset": result_QRS_onset["f1_score"],
+            "val/F1_QRS_offset": result_QRS_offset["f1_score"],
+            "val/F1_T_onset": result_T_onset["f1_score"],
+            "val/F1_T_offset": result_T_offset["f1_score"],
+        })
+        
+        attributes_to_reset = [
+            'total_P_onset_tp', 'total_P_onset_fp', 'total_P_onset_fn',
+            'total_P_offset_tp', 'total_P_offset_fp', 'total_P_offset_fn',
+            'total_QRS_onset_tp', 'total_QRS_onset_fp', 'total_QRS_onset_fn',
+            'total_QRS_offset_tp', 'total_QRS_offset_fp', 'total_QRS_offset_fn',
+            'total_T_onset_tp', 'total_T_onset_fp', 'total_T_onset_fn',
+            'total_T_offset_tp', 'total_T_offset_fp', 'total_T_offset_fn',
+        ]
+        for attr in attributes_to_reset:
+            setattr(self, attr, 0)
+
         pass
     
 
@@ -159,7 +261,7 @@ class Unet3PlusLitModule(LightningModule):
             labels.
         :param batch_idx: The index of the current batch.
         """
-        loss, _, _ = self.model_step(batch)
+        loss, _, _, _, _ = self.model_step(batch)
 
         # update and log metrics
         self.test_loss(loss)
