@@ -147,8 +147,8 @@ def draw_segmentation_timeline(ecg_signal, ecg_segment, length=5000, is_gt=False
         predicted_classes = np.argmax(ecg_segment, axis=0)
 
         # Convert to one-hot encoding
-        ecg_segment = np.zeros((5000, 4))
-        ecg_segment[np.arange(5000), predicted_classes] = 1
+        ecg_segment = np.zeros((length, 4))
+        ecg_segment[np.arange(length), predicted_classes] = 1
         ecg_segment = ecg_segment.T
     
     # Extract the segments for the single lead
