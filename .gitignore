@@ -154,3 +154,4 @@ configs/local/default.yaml
 .aim
 *.ipynb
 output/*
+!notebooks/attention_demo.ipynb
