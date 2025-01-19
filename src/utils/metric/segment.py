@@ -28,6 +28,30 @@ def calculate_f1_score(sensitivity, ppv):
         return 0
     return 2 * (sensitivity * ppv) / (sensitivity + ppv)
 
+
+def batch_arg_max(ecg_batch: np.ndarray) -> np.ndarray:
+    """
+    Processes a batch of ECG segments and converts them to one-hot encoded format.
+
+    Parameters:
+    ecg_batch (np.ndarray): Input array of shape (batch, channel, seq_length)
+
+    Returns:
+    np.ndarray: Output array of shape (batch, 4, seq_length) containing one-hot encoded values.
+    """
+    batch_size, channels, seq_length = ecg_batch.shape
+    one_hot_encoded_batch = np.zeros((batch_size, 4, seq_length))
+
+    for i in range(batch_size):
+        ecg_segment = ecg_batch[i]
+        predicted_classes = np.argmax(ecg_segment, axis=0)
+        one_hot_encoded_segment = np.zeros((seq_length, 4))
+        one_hot_encoded_segment[np.arange(seq_length), predicted_classes] = 1
+        one_hot_encoded_batch[i] = one_hot_encoded_segment.T
+
+    return one_hot_encoded_batch
+
+
 def calculate_wave_metrics(y_true, y_pred, tolerance=0) -> dict:
     """
     Calculate sensitivity, PPV, and F1 score for ECG wave boundaries.
@@ -47,19 +71,9 @@ def calculate_wave_metrics(y_true, y_pred, tolerance=0) -> dict:
     dict
         Dictionary containing sensitivity, PPV, and F1 score for each wave component's onset and offset
     """
-    
-    # pre process for y_pred
-    batch_size, num_classes, seq_length = y_pred.shape
-    ecg_batch = np.random.rand(batch_size, num_classes, seq_length)
 
-    # Find predicted classes for each element in the batch
-    predicted_classes = np.argmax(ecg_batch, axis=1)  # Shape: (batch_size, seq_length)
 
-    # Convert to one-hot encoding
-    ecg_batch_one_hot = np.zeros((batch_size, num_classes, seq_length))
-    ecg_batch_one_hot[np.arange(batch_size)[:, None], predicted_classes, np.arange(seq_length)] = 1
-
-    y_pred = ecg_batch_one_hot
+    y_pred =  batch_arg_max(y_pred)
 
     
     if y_true.shape != y_pred.shape:
@@ -202,8 +216,8 @@ def calculate_metrics(tp, fp, fn) -> dict:
     }
 
 if __name__ == '__main__':
-    pred = np.load('/work/hpc/ntt/ECG-Classification/output/pred/0.npy')[:, :, 500:3500] # (16, 4, 3000)
-    tg = np.load('/work/hpc/ntt/ECG-Classification/output/gt/0.npy')[:, :, 500:3500]
+    pred = np.load('output/pred/0.npy')[:, :, 500:3500] # (16, 4, 3000)
+    tg = np.load('output/gt/0.npy')[:, :, 500:3500]
     # signal = np.load()
      
     metrics = calculate_wave_metrics(tg, pred, tolerance=75)
