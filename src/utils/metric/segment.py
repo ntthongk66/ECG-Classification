@@ -1,4 +1,5 @@
 import numpy as np
+from src.utils import draw_segmentation_timeline
 
 def find_boundaries(signal) -> tuple:
     """
@@ -46,6 +47,21 @@ def calculate_wave_metrics(y_true, y_pred, tolerance=0) -> dict:
     dict
         Dictionary containing sensitivity, PPV, and F1 score for each wave component's onset and offset
     """
+    
+    # pre process for y_pred
+    batch_size, num_classes, seq_length = y_pred.shape
+    ecg_batch = np.random.rand(batch_size, num_classes, seq_length)
+
+    # Find predicted classes for each element in the batch
+    predicted_classes = np.argmax(ecg_batch, axis=1)  # Shape: (batch_size, seq_length)
+
+    # Convert to one-hot encoding
+    ecg_batch_one_hot = np.zeros((batch_size, num_classes, seq_length))
+    ecg_batch_one_hot[np.arange(batch_size)[:, None], predicted_classes, np.arange(seq_length)] = 1
+
+    y_pred = ecg_batch_one_hot
+
+    
     if y_true.shape != y_pred.shape:
         raise ValueError(f"Shapes must match. Got y_true: {y_true.shape}, y_pred: {y_pred.shape}")
     
@@ -186,8 +202,9 @@ def calculate_metrics(tp, fp, fn) -> dict:
     }
 
 if __name__ == '__main__':
-    pred = np.load('sample.npy')
-    tg = np.load('sample.npy')
-    
+    pred = np.load('/work/hpc/ntt/ECG-Classification/output/pred/0.npy')[:, :, 500:3500] # (16, 4, 3000)
+    tg = np.load('/work/hpc/ntt/ECG-Classification/output/gt/0.npy')[:, :, 500:3500]
+    # signal = np.load()
+     
     metrics = calculate_wave_metrics(tg, pred, tolerance=75)
     print_wave_metrics(metrics)

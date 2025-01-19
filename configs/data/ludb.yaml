@@ -1,5 +1,6 @@
 _target_: src.data.ludb_datamodule.LUDBDataModule
 data_dir: ${paths.data_dir}/ludb/data
 batch_size: 16 # Needs to be divisible by the number of devices (e.g., if in a distributed setup)
+n_ludb_train: 150
 num_workers: 10
 pin_memory: False

@@ -56,6 +56,8 @@ class Unet3PlusLitModule(LightningModule):
 
         self.wave_order = ['P_onset', 'P_offset', 'QRS_onset', 'QRS_offset', 'T_onset', 'T_offset']
         
+        self.test_step_idx = 0
+        
         # for val/test process
 
         # Initialize metrics for P wave
@@ -261,8 +263,19 @@ class Unet3PlusLitModule(LightningModule):
             labels.
         :param batch_idx: The index of the current batch.
         """
-        loss, _, _, _, _ = self.model_step(batch)
-
+        loss, _, _, seg_tg, seg_pred = self.model_step(batch)
+        # save the batch 
+        
+        seg_tg_np = seg_tg.cpu().numpy()
+        seg_pred_np = seg_pred.cpu().numpy()
+        X_np = batch[0].cpu().numpy()
+        
+        np.save(f'/work/hpc/ntt/ECG-Classification/output/gt/{self.test_step_idx}', seg_tg_np)
+        np.save(f'/work/hpc/ntt/ECG-Classification/output/pred/{self.test_step_idx}', seg_pred_np)
+        np.save(f'/work/hpc/ntt/ECG-Classification/output/signal/{self.test_step_idx}', X_np)
+        
+        
+        self.test_step_idx += 1
         # update and log metrics
         self.test_loss(loss)
         self.log("test/loss", self.test_loss, on_step=False, on_epoch=True, prog_bar=True)
