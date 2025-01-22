@@ -22,6 +22,6 @@ rootutils       # standardizing the project root setup
 pre-commit      # hooks for applying linters on commit
 rich            # beautiful text formatting in terminal
 pytest    
-wfdb==4.1.0      # tests
+wfdb==4.2.0      # tests
 # sh            # for running bash commands in some tests (linux/macos only)
 
