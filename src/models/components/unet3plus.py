@@ -20,11 +20,15 @@ class ConvBnRelu1d(nn.Module):
         return x
 
 
+
 class StackEncoder(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size=9, padding=4):
         super().__init__()
         self.conv1 = ConvBnRelu1d(in_channels, out_channels, kernel_size=kernel_size, padding=padding)
+        # attention (recomment)
         self.conv2 = ConvBnRelu1d(out_channels, out_channels, kernel_size=kernel_size, padding=padding)
+        
+        #! or here
         self.pool = nn.MaxPool1d(kernel_size=2, stride=2)
 
     def forward(self, x):
@@ -329,5 +333,5 @@ class ECGUNet3pCGM(nn.Module):
         return X_seg, X_cls_prob
 
 
-if __name__=='__main__':
-    m
+# if __name__=='__main__':
+#     m
